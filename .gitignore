@@ -4,12 +4,15 @@
 
 /.vs/EcommerceAI
 /EcommerceAI.API/bin/Debug/net9.0
+/.vs/EcommerceAI/FileContentIndex
 /EcommerceAI.API/obj
 /EcommerceAI.Contracts/bin/Debug/net9.0
 /EcommerceAI.Contracts/obj
 /EcommerceAI.Models/bin/Debug/net9.0
+/EcommerceAI.Models/obj/Debug/net9.0
 /EcommerceAI.Models/obj
 /EcommerceAI.Repositories/bin/Debug/net9.0
 /EcommerceAI.Repositories/obj
 /EcommerceAI.Services/bin/Debug/net9.0
 /EcommerceAI.Services/obj
+/.vs/EcommerceAI/v17

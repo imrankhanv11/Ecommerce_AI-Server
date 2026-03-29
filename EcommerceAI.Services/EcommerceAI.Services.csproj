@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EcommerceAI.Repositories\EcommerceAI.Repositories.csproj" />
+    <ProjectReference Include="..\EcommerceAI.Contracts\EcommerceAI.Contracts.csproj" />
+    <ProjectReference Include="..\EcommerceAI.Models\EcommerceAI.Models.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.3" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="9.0.3" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.3" />
+  </ItemGroup>
+
+</Project>
+
