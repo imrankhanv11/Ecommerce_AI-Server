@@ -1,3 +1,5 @@
+using System.Data;
+using Microsoft.Data.SqlClient;
 using EcommerceAI.Repositories.Interfaces;
 using EcommerceAI.Repositories.Implementations;
 using EcommerceAI.Services.Interfaces;
@@ -26,6 +28,13 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ICategoryService, CategoryService>();
         services.AddScoped<IUserActivityService, UserActivityService>();
         services.AddScoped<ISearchService, SearchService>();
+        // --- SQL Connection ---
+        services.AddScoped<IDbConnection>(sp =>
+        {
+            var config = sp.GetRequiredService<IConfiguration>();
+            return new SqlConnection(config.GetConnectionString("Default"));
+        });
+
         // NOTE: IChatbotService is registered via AddHttpClient in Program.cs
 
         return services;
