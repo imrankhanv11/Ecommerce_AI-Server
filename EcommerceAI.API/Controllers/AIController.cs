@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
+using EcommerceAI.Services.Interfaces;
 
 namespace EcommerceAI.API.Controllers;
 
@@ -8,10 +9,14 @@ namespace EcommerceAI.API.Controllers;
 public class AIController : ControllerBase
 {
     private readonly IConfiguration _configuration;
+    private readonly IChatbotService _chatbotService;
+    private readonly Microsoft.Extensions.Logging.ILogger<AIController> _logger;
 
-    public AIController(IConfiguration configuration)
+    public AIController(IConfiguration configuration, IChatbotService chatbotService, Microsoft.Extensions.Logging.ILogger<AIController> logger)
     {
         _configuration = configuration;
+        _chatbotService = chatbotService;
+        _logger = logger;
     }
 
     [HttpGet("config")]
@@ -29,5 +34,26 @@ public class AIController : ControllerBase
         };
 
         return Ok(response);
+    }
+
+    [HttpPost("cancellation-message")]
+    public async Task<IActionResult> GetCancellationMessage([FromBody] EcommerceAI.Contracts.DTOs.AI.CancellationMessageRequestDto request)
+    {
+        var customerName = User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value ?? "Valued Customer";
+        
+        var message = await _chatbotService.GenerateCancellationMessageAsync(
+            request.Items, customerName);
+            
+        return Ok(new EcommerceAI.Contracts.DTOs.AI.CancellationMessageResponseDto { Message = message });
+    }
+
+    [HttpGet("product-insight")]
+    public async Task<IActionResult> GetProductInsight([FromQuery] string productName)
+    {
+        if (string.IsNullOrEmpty(productName)) return BadRequest("Product name is required");
+        _logger.LogInformation("Received request for product insight: {ProductName}", productName);
+        var insight = await _chatbotService.GetProductInsightAsync(productName);
+        _logger.LogInformation("Returning insight for {ProductName}: {InsightText}", productName, insight);
+        return Ok(new { insight = insight });
     }
 }

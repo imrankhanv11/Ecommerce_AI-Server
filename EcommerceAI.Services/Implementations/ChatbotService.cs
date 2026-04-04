@@ -4,6 +4,9 @@ using System.Text.Json;
 using Dapper;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using System.Collections.Generic;
+using System.Linq;
+using EcommerceAI.Contracts.DTOs.AI;
 using EcommerceAI.Contracts.DTOs.Chatbot;
 using EcommerceAI.Contracts.DTOs.Product;
 using EcommerceAI.Repositories.Interfaces;
@@ -672,5 +675,177 @@ public class ChatbotService : IChatbotService
             return "SQL_QUERY";
 
         return "GENERAL";
+    }
+
+    public async Task<string> GenerateCancellationMessageAsync(
+        List<CancellationItemDto> items, string customerName)
+    {
+        try
+        {
+            var model = _configuration["AI:OllamaModel"] ?? "llama3.2:1b";
+            var baseUrl = _configuration["AI:OllamaBaseUrl"] ?? "http://localhost:11434";
+
+            var itemsSummary = string.Join(", ", items.Select(i => $"{i.ProductName} ({i.CategoryName})"));
+            var isMultiItem = items.Count > 1;
+
+            var systemPrompt = 
+                "You are Aura, the premium AI shopping concierge for Aura Store. " +
+                "A customer is considering cancelling their order, and your mission is to gently and warmly remind them " +
+                "why they chose these items in the first place by creating a relevant emotional connection. " +
+                (isMultiItem 
+                    ? "TREAT THIS AS A CURATED COLLECTION: Highlight the wonderful variety and the collective value of this selection. Make them feel like they've built a perfect set. "
+                    : "ADAPT YOUR TONE BASED ON THE CATEGORY: " +
+                      "- Food: Caring, health-focused, and warm. " +
+                      "- Clothing/Fashion: Confident, stylish. " +
+                      "- Electronics: Focus on productivity and usefulness. " +
+                      "- Fitness: Focus on health and progress. " +
+                      "- Books: Focus on knowledge and growth. ") +
+                "STRICT RULES: " +
+                "1. Keep it to exactly 2 short, high-impact sentences. " +
+                "2. NO generic phrases like 'Are you sure'. " +
+                "3. Start with a warm greeting using the customer's name. " +
+                "4. End with a subtle sparkle emoji ✨. " +
+                "5. Mention the primary product names naturally.";
+
+            var prompt = 
+                $"Customer Name: {customerName}\n" +
+                $"Order Items: {itemsSummary}\n" +
+                $"Total Item Count: {items.Count}\n\n" +
+                "Message:";
+
+            var requestBody = new
+            {
+                model,
+                system = systemPrompt,
+                prompt,
+                stream = false,
+                options = new { temperature = 0.7, top_p = 0.9, num_predict = 100 }
+            };
+
+            var response = await _httpClient.PostAsJsonAsync(
+                $"{baseUrl.TrimEnd('/')}/api/generate", requestBody);
+
+            if (!response.IsSuccessStatusCode) return GetFallbackMessage(items);
+
+            var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var message = doc.RootElement.GetProperty("response").GetString()?.Trim() ?? "";
+
+            return string.IsNullOrWhiteSpace(message) ? GetFallbackMessage(items) : message;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "GenerateCancellationMessageAsync failed");
+            return GetFallbackMessage(items);
+        }
+    }
+
+    private async Task<string> CallOllamaForInsightAsync(string productName)
+    {
+        try
+        {
+            var model = _configuration["AI:OllamaModel"] ?? "llama3.2:1b";
+            var baseUrl = _configuration["AI:OllamaBaseUrl"] ?? "http://localhost:11434";
+            var prompt = $"In one short sentence (max 20 words), tell why {productName} is a great purchase. Be specific and helpful.";
+            var requestBody = new { model, prompt, stream = false, options = new { temperature = 0.5, num_predict = 50 } };
+            var response = await _httpClient.PostAsJsonAsync($"{baseUrl.TrimEnd('/')}/api/generate", requestBody);
+            if (!response.IsSuccessStatusCode) return string.Empty;
+            var result = await response.Content.ReadFromJsonAsync<JsonElement>();
+            return result.GetProperty("response").GetString()?.Trim() ?? string.Empty;
+        }
+        catch { return string.Empty; }
+    }
+
+    private async Task<string> CallAnthropicAsync(string prompt, string apiKey)
+    {
+        try
+        {
+            var model = _configuration["AI:AnthropicModel"] ?? "claude-3-haiku-20240307";
+            var requestBody = new { 
+                model, 
+                max_tokens = 100, 
+                messages = new[] { new { role = "user", content = prompt } } 
+            };
+            
+            _logger.LogInformation("Calling Anthropic API for insight...");
+            
+            using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.anthropic.com/v1/messages");
+            request.Headers.Add("x-api-key", apiKey);
+            request.Headers.Add("anthropic-version", "2023-06-01");
+            request.Content = JsonContent.Create(requestBody);
+            
+            var response = await _httpClient.SendAsync(request);
+            
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                _logger.LogError("Anthropic API returned error {StatusCode}: {ErrorContent}", response.StatusCode, error);
+                return string.Empty;
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<JsonElement>();
+            
+            // Log the raw response for debugging as requested by user
+            _logger.LogDebug("Anthropic Raw Response: {RawJson}", result.GetRawText());
+
+            if (result.TryGetProperty("content", out var content) && content.GetArrayLength() > 0)
+            {
+                var firstContent = content[0];
+                if (firstContent.TryGetProperty("text", out var text))
+                {
+                    var insightText = text.GetString()?.Trim() ?? string.Empty;
+                    _logger.LogInformation("Successfully parsed Anthropic insight: {InsightText}", insightText);
+                    return insightText;
+                }
+            }
+
+            _logger.LogWarning("Anthropic response did not contain expected 'content[0].text' structure.");
+            return string.Empty;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "CallAnthropicAsync encountered a critical failure");
+            return string.Empty;
+        }
+    }
+
+    public async Task<string> GetProductInsightAsync(string productName)
+    {
+        string? insight = null;
+        try
+        {
+            var apiKey = _configuration["AI:AnthropicApiKey"];
+            bool hasValidKey = !string.IsNullOrEmpty(apiKey) && apiKey != "YOUR_ANTHROPIC_API_KEY_HERE";
+
+            if (hasValidKey)
+            {
+                _logger.LogInformation("Attempting Anthropic for {ProductName}", productName);
+                var prompt = $"In one short sentence (max 20 words), tell why {productName} is a great purchase. Be specific and helpful.";
+                insight = await CallAnthropicAsync(prompt, apiKey!);
+            }
+
+            if (string.IsNullOrWhiteSpace(insight))
+            {
+                _logger.LogInformation("Falling back to Ollama for {ProductName}", productName);
+                insight = await CallOllamaForInsightAsync(productName);
+            }
+
+            return string.IsNullOrWhiteSpace(insight) 
+                ? "This selection perfectly complements your modern lifestyle. ✨" 
+                : insight;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "GetProductInsightAsync failed for {ProductName}", productName);
+            return "This selection perfectly complements your modern lifestyle. ✨";
+        }
+    }
+
+    private string GetFallbackMessage(List<CancellationItemDto> items)
+    {
+        var productText = items.Count > 1 
+            ? $"{items.Count} items in your order" 
+            : items.FirstOrDefault()?.ProductName ?? "your selection";
+            
+        return $"Are you sure you want to cancel {productText}? These items were selected just for you and we'd love for you to experience them! ✨";
     }
 }
