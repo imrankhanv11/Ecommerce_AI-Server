@@ -29,14 +29,91 @@ public class ChatbotService : IChatbotService
     private const int MaxRetries = 2;
 
     private const string DbSchema =
-        "Users: Id(uniqueidentifier), Email(nvarchar), FirstName(nvarchar), LastName(nvarchar), Role(nvarchar), CreatedAt(datetime2)\n" +
-        "Orders: Id(uniqueidentifier), UserId(uniqueidentifier FK->Users), Status(nvarchar), TotalAmount(decimal), CreatedAt(datetime2), UpdatedAt(datetime2)\n" +
-        "OrderItems: Id(uniqueidentifier), OrderId(uniqueidentifier FK->Orders), ProductId(uniqueidentifier FK->Products), Quantity(int), UnitPrice(decimal)\n" +
-        "Products: Id(uniqueidentifier), Name(nvarchar), Price(decimal), Stock(int), CategoryId(uniqueidentifier FK->Categories), Tags(nvarchar), IsActive(bit), CreatedAt(datetime2)\n" +
-        "Categories: Id(uniqueidentifier), Name(nvarchar), Slug(nvarchar), Description(nvarchar), CreatedAt(datetime2)\n" +
-        "Carts: Id(uniqueidentifier), UserId(uniqueidentifier FK->Users), CreatedAt(datetime2), UpdatedAt(datetime2)\n" +
-        "CartItems: Id(uniqueidentifier), CartId(uniqueidentifier FK->Carts), ProductId(uniqueidentifier FK->Products), Quantity(int)\n" +
-        "UserActivities: Id(uniqueidentifier), UserId(uniqueidentifier FK->Users), ProductId(uniqueidentifier FK->Products), ActivityType(nvarchar), Score(int), CreatedAt(datetime2)\n";
+        "TABLE Users (\n" +
+        "  Id           UNIQUEIDENTIFIER PRIMARY KEY,\n" +
+        "  Email        NVARCHAR(256) UNIQUE NOT NULL,\n" +
+        "  FirstName    NVARCHAR(100),\n" +
+        "  LastName     NVARCHAR(100),\n" +
+        "  Role         NVARCHAR(50),       -- values: 'Admin', 'Customer'\n" +
+        "  CreatedAt    DATETIME2\n" +
+        ")\n\n" +
+        "TABLE Products (\n" +
+        "  Id           UNIQUEIDENTIFIER PRIMARY KEY,\n" +
+        "  Name         NVARCHAR(200) NOT NULL,\n" +
+        "  Price        DECIMAL(18,2) NOT NULL,\n" +
+        "  Stock        INT NOT NULL DEFAULT 0,\n" +
+        "  CategoryId   UNIQUEIDENTIFIER NOT NULL,\n" +
+        "  Tags         NVARCHAR(500),      -- comma-separated e.g. 'electronics,sale'\n" +
+        "  IsActive     BIT NOT NULL DEFAULT 1,\n" +
+        "  CreatedAt    DATETIME2\n" +
+        ")\n\n" +
+        "TABLE Categories (\n" +
+        "  Id           UNIQUEIDENTIFIER PRIMARY KEY,\n" +
+        "  Name         NVARCHAR(100) NOT NULL,\n" +
+        "  Slug         NVARCHAR(100),\n" +
+        "  Description  NVARCHAR(500),\n" +
+        "  CreatedAt    DATETIME2\n" +
+        ")\n\n" +
+        "TABLE Orders (\n" +
+        "  Id           UNIQUEIDENTIFIER PRIMARY KEY,\n" +
+        "  UserId       UNIQUEIDENTIFIER NOT NULL,\n" +
+        "  Status       NVARCHAR(50),       -- values: 'Pending','Processing','Shipped','Delivered','Cancelled'\n" +
+        "  TotalAmount  DECIMAL(18,2) NOT NULL,\n" +
+        "  CreatedAt    DATETIME2,\n" +
+        "  UpdatedAt    DATETIME2\n" +
+        ")\n\n" +
+        "TABLE OrderItems (\n" +
+        "  Id           UNIQUEIDENTIFIER PRIMARY KEY,\n" +
+        "  OrderId      UNIQUEIDENTIFIER NOT NULL,\n" +
+        "  ProductId    UNIQUEIDENTIFIER NOT NULL,\n" +
+        "  Quantity     INT NOT NULL,\n" +
+        "  UnitPrice    DECIMAL(18,2) NOT NULL  -- price at time of purchase\n" +
+        ")\n\n" +
+        "TABLE Carts (\n" +
+        "  Id           UNIQUEIDENTIFIER PRIMARY KEY,\n" +
+        "  UserId       UNIQUEIDENTIFIER NOT NULL UNIQUE,  -- one cart per user\n" +
+        "  CreatedAt    DATETIME2,\n" +
+        "  UpdatedAt    DATETIME2\n" +
+        ")\n\n" +
+        "TABLE CartItems (\n" +
+        "  Id           UNIQUEIDENTIFIER PRIMARY KEY,\n" +
+        "  CartId       UNIQUEIDENTIFIER NOT NULL,\n" +
+        "  ProductId    UNIQUEIDENTIFIER NOT NULL,\n" +
+        "  Quantity     INT NOT NULL\n" +
+        ")\n\n" +
+        "TABLE UserActivities (\n" +
+        "  Id           UNIQUEIDENTIFIER PRIMARY KEY,\n" +
+        "  UserId       UNIQUEIDENTIFIER NOT NULL,\n" +
+        "  ProductId    UNIQUEIDENTIFIER NOT NULL,\n" +
+        "  ActivityType NVARCHAR(50),       -- values: 'View','AddToCart','Purchase','Wishlist'\n" +
+        "  Score        INT,\n" +
+        "  CreatedAt    DATETIME2\n" +
+        ")\n\n" +
+        "RELATIONSHIPS:\n" +
+        "  Orders.UserId        → Users.Id\n" +
+        "  OrderItems.OrderId   → Orders.Id\n" +
+        "  OrderItems.ProductId → Products.Id\n" +
+        "  Products.CategoryId  → Categories.Id\n" +
+        "  Carts.UserId         → Users.Id\n" +
+        "  CartItems.CartId     → Carts.Id\n" +
+        "  CartItems.ProductId  → Products.Id\n" +
+        "  UserActivities.UserId    → Users.Id\n" +
+        "  UserActivities.ProductId → Products.Id\n\n" +
+        "COMMON JOIN PATTERNS (use these exactly):\n" +
+        "  -- Orders with items and product names:\n" +
+        "  Orders o\n" +
+        "    JOIN OrderItems oi ON oi.OrderId = o.Id\n" +
+        "    JOIN Products p    ON p.Id = oi.ProductId\n" +
+        "  -- Always filter: WHERE o.UserId = CAST('<userId>' AS UNIQUEIDENTIFIER)\n" +
+        "  -- Always count:  COUNT(DISTINCT o.Id) when counting orders (avoids duplicate row inflation from JOIN)\n" +
+        "  -- Always limit:  SELECT TOP (10) ...\n\n" +
+        "RULES FOR AI SQL GENERATION:\n" +
+        "  - Only generate SELECT statements.\n" +
+        "  - Always include TOP (10) or less — never omit it.\n" +
+        "  - Always filter by UserId using CAST('...' AS UNIQUEIDENTIFIER).\n" +
+        "  - Use T-SQL syntax: TOP not LIMIT, GETDATE() not NOW(), ISNULL() not COALESCE where possible.\n" +
+        "  - Never use subqueries that access system tables.\n" +
+        "  - Never use UNION, EXEC, dynamic SQL, or string concatenation.\n";
 
     public ChatbotService(
         HttpClient httpClient,
@@ -112,6 +189,67 @@ public class ChatbotService : IChatbotService
             }).ToList();
         }
 
+        // --- Step 2b: Contextual follow-up enrichment ---
+        // Detects pronoun-reference or vague follow-ups ("them", "those", "tell me more"),
+        // reads the last history turn to identify the topic, then REPLACES userMessage
+        // with a clean canonical query. Replacing (not prepending) prevents the small AI
+        // model from being confused by a garbled compound sentence and generating wrong SQL.
+        if (request.History?.Count > 0)
+        {
+            // Strong signals: message refers to something already mentioned
+            var pronounSignals = new[] { " them", " those", " these", " they" };
+            var vagueSignals   = new[] { "details of", "more about", "tell me more", "give me more", "give more", "all of", "show all", "show them", "show those" };
+
+            // Own-topic guard: message already carries a clear subject — skip enrichment
+            var ownTopicGuard  = new[] { "order", "cart", "product", "price", "buy", "shop", "spend", "deliver", "ship" };
+
+            bool hasPronounSignal = pronounSignals.Any(p => userMessage.Contains(p));
+            bool hasVagueSignal   = vagueSignals.Any(v => userMessage.Contains(v)) && userMessage.Split(' ').Length <= 10;
+            bool hasOwnTopic      = ownTopicGuard.Any(t => userMessage.Contains(t));
+
+            if ((hasPronounSignal || hasVagueSignal) && !hasOwnTopic)
+            {
+                // Read last assistant reply + last user message to identify the current topic
+                var lastAiContent   = request.History.Where(h => h.Role == "assistant").Select(h => h.Content?.ToLower() ?? "").LastOrDefault() ?? "";
+                var lastUserContent = request.History.Where(h => h.Role == "user").Select(h => h.Content?.ToLower() ?? "").LastOrDefault() ?? "";
+                var historySignal   = lastAiContent + " " + lastUserContent;
+
+                // Determine whether the follow-up asks for item-level detail or a summary
+                bool asksForItemDetail = userMessage.Contains("item") || userMessage.Contains("product") ||
+                                         userMessage.Contains("have") || userMessage.Contains("what") ||
+                                         userMessage.Contains("detail") || userMessage.Contains("content") ||
+                                         userMessage.Contains("inside") || userMessage.Contains("contain");
+
+                if ((historySignal.Contains("order") || historySignal.Contains("purchase")) && !historySignal.Contains("cart"))
+                {
+                    // REPLACE with a clean order-items query — ensures AI selects oi.UnitPrice
+                    // (triggers isOrderItems=true in FormatRowsForAI for proper formatting)
+                    userMessage = asksForItemDetail
+                        ? "what items are in my orders with product name quantity and unit price"
+                        : "show my order history with status and total amounts";
+                    _logger.LogInformation("Follow-up REPLACED → order context (history-resolved): {Msg}", userMessage);
+                }
+                else if (historySignal.Contains("cart") || historySignal.Contains("basket"))
+                {
+                    // Replacing to cart intent — Step 4b will answer directly from loaded data
+                    userMessage = "what items are in my cart with their prices";
+                    _logger.LogInformation("Follow-up REPLACED → cart context (history-resolved)");
+                }
+                else if (historySignal.Contains("spent") || historySignal.Contains("spending") ||
+                         historySignal.Contains("amount") || historySignal.Contains("total"))
+                {
+                    userMessage = "what is my total spending amount across all my orders";
+                    _logger.LogInformation("Follow-up REPLACED → spending context (history-resolved)");
+                }
+                else if (historySignal.Contains("product") || historySignal.Contains("price") || historySignal.Contains("stock"))
+                {
+                    userMessage = "show product details and prices";
+                    _logger.LogInformation("Follow-up REPLACED → product context (history-resolved)");
+                }
+                // If topic is unclear, do NOT enrich blindly — let GENERAL handle it
+            }
+        }
+
         // --- Step 3: Intent Detection ---
         var intent = DetectIntent(userMessage);
 
@@ -161,6 +299,7 @@ public class ChatbotService : IChatbotService
             else
             {
                 _logger.LogInformation("Triggering SQL path for: {Query}", userMessage);
+                bool sqlPathAttempted = false; // tracks whether SQL branch ran (blocks Ollama fallthrough)
                 try
                 {
                     var sql = await GenerateSqlAsync(userMessage, userId);
@@ -168,6 +307,7 @@ public class ChatbotService : IChatbotService
 
                     if (!string.IsNullOrWhiteSpace(sql) && ValidateSql(sql))
                     {
+                        sqlPathAttempted = true;
                         var rows = await ExecuteSqlAsync(sql);
                         if (rows != null && rows.Any())
                         {
@@ -176,6 +316,17 @@ public class ChatbotService : IChatbotService
                             _logger.LogInformation("Formatted DB result: {Result}", formattedResult);
                             rawResponse = await ConvertResultToNaturalLanguageAsync(
                                 userMessage, formattedResult, user?.FirstName ?? "there");
+
+                            // Guard: if natural-language conversion returns empty (timeout / small-model
+                            // failure), use the pre-formatted data directly so we never fall through
+                            // to Ollama, which would read the wrong context block (e.g. cart data).
+                            if (string.IsNullOrWhiteSpace(rawResponse))
+                            {
+                                rawResponse =
+                                    $"Hi {user?.FirstName ?? "there"}! Here's what I found:\n{formattedResult}";
+                                _logger.LogInformation(
+                                    "ConvertResultToNaturalLanguageAsync returned empty — using pre-formatted data directly");
+                            }
                         }
                         else
                         {
@@ -191,6 +342,16 @@ public class ChatbotService : IChatbotService
                 {
                     _logger.LogError(ex, "SQL path failed");
                     rawResponse = "I had trouble looking that up. Please try again shortly!";
+                }
+
+                // When the SQL branch ran, lock rawResponse so Ollama is never called.
+                // Ollama reads the full context (including [CART] block) and if intent is
+                // SQL_QUERY it has no specific instruction — it falls back to reading cart
+                // data and returns it verbatim, contaminating order/spending responses.
+                if (sqlPathAttempted && string.IsNullOrWhiteSpace(rawResponse))
+                {
+                    rawResponse = $"Hi {user?.FirstName ?? "there"}! I couldn't retrieve that information right now. Please try rephrasing your question.";
+                    _logger.LogInformation("SQL path attempted but produced no result — Ollama fallthrough blocked");
                 }
             }
         }
@@ -220,7 +381,47 @@ public class ChatbotService : IChatbotService
         var intentContext = $"[DETECTED INTENT]\n{intent}";
         var context = $"{customerProfile}\n\n{cartContext}\n\n{ordersContext}\n\n{searchContext}\n\n{intentContext}";
 
-        // --- Step 5: Normal AI Call (only if SQL path didn't already answer) ---
+        // --- Step 4b: Direct C# response for data-bound intents (CART / ORDER) ---
+        // Bypasses Ollama entirely for factual lookups — small models frequently misclassify
+        // cart/order phrasing variants as off-topic and return deflection messages.
+        if (string.IsNullOrWhiteSpace(rawResponse))
+        {
+            if (intent == "CART_INQUIRY")
+            {
+                if (cartItems.Count == 0)
+                {
+                    rawResponse = $"Hi {user?.FirstName ?? "there"}! Your cart is currently empty. Browse our products to find something you'll love! 🛒";
+                }
+                else
+                {
+                    var lines = cartItems.Select(i =>
+                        $"[C] {i.Product.Name} × {i.Quantity} | Rs.{i.Product.Price} each | Rs.{i.Product.Price * i.Quantity}");
+                    rawResponse =
+                        $"Hi {user?.FirstName ?? "there"}! You have {cartItems.Count} item(s) in your cart:\n" +
+                        string.Join("\n", lines) +
+                        $"\n\nCart Total: Rs.{cartTotal}";
+                }
+                _logger.LogInformation("Cart inquiry answered directly — {Count} item(s)", cartItems.Count);
+            }
+            else if (intent == "ORDER_INQUIRY")
+            {
+                if (recentOrders.Count == 0)
+                {
+                    rawResponse = $"Hi {user?.FirstName ?? "there"}! You don't have any recent orders yet. Start shopping with us today! 🛒";
+                }
+                else
+                {
+                    var lines = recentOrders.Select(o =>
+                        $"[O] Order #{o.Id.ToString().Substring(0, 8).ToUpper()} | {o.Status} | Rs.{o.TotalAmount} | {o.CreatedAt:MMM dd yyyy}");
+                    rawResponse =
+                        $"Hi {user?.FirstName ?? "there"}! Here are your recent orders:\n" +
+                        string.Join("\n", lines);
+                }
+                _logger.LogInformation("Order inquiry answered directly — {Count} order(s)", recentOrders.Count);
+            }
+        }
+
+        // --- Step 5: Normal AI Call (only if data-bound or SQL path didn't already answer) ---
         if (string.IsNullOrWhiteSpace(rawResponse))
         {
             for (int attempt = 1; attempt <= MaxRetries; attempt++)
@@ -428,7 +629,7 @@ public class ChatbotService : IChatbotService
             "Max 4 lines total.\n";
 
         var historyText = history
-            .TakeLast(6)
+            .TakeLast(4)  // 4 turns is enough context; fewer tokens = faster response
             .Select(h => $"{(h.Role == "user" ? "Customer" : "Aura")}: {h.Content}")
             .Aggregate("", (a, b) => a + "\n" + b);
 
@@ -438,7 +639,9 @@ public class ChatbotService : IChatbotService
             system = systemPrompt,
             prompt = $"{context}\n\nConversation so far:\n{historyText}\n\nCustomer: {userMessage}\nAura:",
             stream = false,
-            options = new { temperature = 0.4, top_p = 0.85, repeat_penalty = 1.1, num_predict = 180 }
+            // num_ctx: caps the context window processed per call — biggest latency lever for 8B models
+            // num_predict: max 4 lines per rule, 100 tokens is generous for 4 short lines
+            options = new { temperature = 0.4, top_p = 0.85, repeat_penalty = 1.1, num_predict = 100, num_ctx = 2048 }
         };
 
         var response = await _httpClient.PostAsJsonAsync(
@@ -464,6 +667,15 @@ public class ChatbotService : IChatbotService
     {
         try
         {
+            // Sanitize user input before sending to AI
+            var sanitizedQuery = query
+                .Replace(";", " ")
+                .Replace("'", " ")
+                .Replace("--", " ")
+                .Replace("/*", " ")
+                .Replace("*/", " ");
+            sanitizedQuery = System.Text.RegularExpressions.Regex.Replace(sanitizedQuery, @"\s+", " ").Trim();
+
             var model = _configuration["AI:OllamaModel"] ?? "llama3.2:1b";
             var baseUrl = _configuration["AI:OllamaBaseUrl"] ?? "http://localhost:11434";
 
@@ -485,9 +697,11 @@ public class ChatbotService : IChatbotService
             {
                 model,
                 system = systemPrompt,
-                prompt = $"Question: {query}\nSQL:",
+                prompt = $"Question: {sanitizedQuery}\nSQL:",  // sanitizedQuery used only here
                 stream = false,
-                options = new { temperature = 0.1, num_predict = 200 }
+                // SQL is a single statement — 120 tokens is more than enough; num_ctx kept small
+                // because the schema prompt + question is the bulk of the input
+                options = new { temperature = 0.1, num_predict = 120, num_ctx = 2048 }
             };
 
             var response = await _httpClient.PostAsJsonAsync(
@@ -498,6 +712,15 @@ public class ChatbotService : IChatbotService
             var sql = doc.RootElement.GetProperty("response").GetString() ?? "";
 
             sql = sql.Replace("```sql", "").Replace("```", "").Trim();
+
+            // Auto-inject TOP (10) if the AI omitted it — small models often forget this.
+            // ValidateSql enforces TOP presence; this ensures structurally valid queries are never blocked for that reason alone.
+            if (sql.StartsWith("SELECT ", StringComparison.OrdinalIgnoreCase) &&
+                !System.Text.RegularExpressions.Regex.IsMatch(sql, @"\bTOP\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            {
+                sql = "SELECT TOP (10) " + sql.Substring("SELECT ".Length).TrimStart();
+                _logger.LogInformation("TOP (10) auto-injected into AI-generated SQL");
+            }
 
             return sql.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase) ? sql : "";
         }
@@ -511,33 +734,88 @@ public class ChatbotService : IChatbotService
     // ─── SQL Validation ──────────────────────────────────────────────────────────
     private bool ValidateSql(string sql)
     {
+        // a. Null/whitespace check
         if (string.IsNullOrWhiteSpace(sql)) return false;
 
-        var upper = sql.ToUpper().Trim();
+        // b. Trim and normalize
+        sql = sql.Trim();
+        var upperSql = sql.ToUpperInvariant();
 
-        if (!upper.StartsWith("SELECT")) return false;
-
-        var blocked = new[]
+        // c. Must start with SELECT
+        if (!upperSql.StartsWith("SELECT"))
         {
-            "INSERT", "UPDATE", "DELETE", "DROP", "ALTER",
-            "TRUNCATE", "CREATE", "EXEC", "EXECUTE",
-            "GRANT", "REVOKE", "--", "UNION", "XTYPE",
-            "SYS.", "INFORMATION_SCHEMA"
-        };
+            _logger.LogWarning("SQL blocked — must start with SELECT");
+            return false;
+        }
 
-        foreach (var keyword in blocked)
-            if (upper.Contains(keyword))
+        // d. Semicolon check (blocks multiple statements)
+        if (upperSql.Contains(";"))
+        {
+            _logger.LogWarning("SQL blocked — semicolon detected (multiple statements)");
+            return false;
+        }
+
+        // e. Block dangerous DML/DDL keywords using whole-word regex (avoids false positives like EXECUTION, CREATES)
+        var dangerousKeywords = new[]
+        {
+            "INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "TRUNCATE", "CREATE",
+            "EXEC", "EXECUTE", "MERGE", "GRANT", "REVOKE", "BULK",
+            "OPENROWSET", "OPENQUERY", "OPENDATASOURCE"
+        };
+        foreach (var keyword in dangerousKeywords)
+        {
+            if (System.Text.RegularExpressions.Regex.IsMatch(upperSql, $@"\b{keyword}\b"))
             {
-                _logger.LogWarning("SQL blocked — contains: {Keyword}", keyword);
+                _logger.LogWarning("SQL blocked — forbidden keyword: {Keyword}", keyword);
                 return false;
             }
+        }
 
+        // f. Block system object access
+        if (upperSql.Contains("SYS.") ||
+            upperSql.Contains("INFORMATION_SCHEMA") ||
+            upperSql.Contains("SYSOBJECTS") ||
+            upperSql.Contains("SYSCOLUMNS"))
+        {
+            _logger.LogWarning("SQL blocked — system table access attempt");
+            return false;
+        }
+
+        // g. Whitelist table check — only known application tables are permitted
+        var allowedTables = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "Users", "Orders", "OrderItems", "Products",
+            "Categories", "Carts", "CartItems", "UserActivities"
+        };
+        var tableMatches = System.Text.RegularExpressions.Regex.Matches(
+            sql, @"(?:FROM|JOIN)\s+(\w+)",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        foreach (System.Text.RegularExpressions.Match match in tableMatches)
+        {
+            var tableName = match.Groups[1].Value;
+            if (!allowedTables.Contains(tableName))
+            {
+                _logger.LogWarning("SQL blocked — non-whitelisted table: {TableName}", tableName);
+                return false;
+            }
+        }
+
+        // h. UserId filter enforcement
         if (!sql.ToLower().Contains("userid") && !sql.ToLower().Contains("user_id"))
         {
             _logger.LogWarning("SQL blocked — missing UserId filter");
             return false;
         }
 
+        // i. TOP clause enforcement
+        if (!upperSql.Contains("TOP"))
+        {
+            _logger.LogWarning("SQL blocked — missing TOP clause");
+            return false;
+        }
+
+        // j. All checks passed
+        _logger.LogInformation("SQL validation passed");
         return true;
     }
 
@@ -549,12 +827,13 @@ public class ChatbotService : IChatbotService
             if (_dbConnection.State != ConnectionState.Open)
                 _dbConnection.Open();
 
+            _logger.LogInformation("Executing SQL: {Sql}", sql);
             var results = await _dbConnection.QueryAsync(sql, commandTimeout: 5);
             return results;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "SQL execution failed: {Sql}", sql);
+            _logger.LogError(ex, "SQL execution failed for query: {Sql}", sql);
             return null;
         }
         finally
@@ -603,7 +882,8 @@ public class ChatbotService : IChatbotService
                 system = systemPrompt,
                 prompt,
                 stream = false,
-                options = new { temperature = 0.1, top_p = 0.9, num_predict = 150 }
+                // Rephrasing pre-formatted data needs very few tokens; 80 covers 3 lines cleanly
+                options = new { temperature = 0.1, top_p = 0.9, num_predict = 80, num_ctx = 2048 }
             };
 
             var response = await _httpClient.PostAsJsonAsync(
